@@ -1,0 +1,7 @@
+RTGUM_LUA_HELPER_0.1 {
+  global:
+    ghostEntry;
+    rtgum_host_bind_lua;
+  local:
+    *;
+};

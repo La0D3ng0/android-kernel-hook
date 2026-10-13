@@ -1,0 +1,28 @@
+diff --git a/lib/android.js b/lib/android.js
+index d023166..9aaff21 100644
+--- a/lib/android.js
++++ b/lib/android.js
+@@ -1169,11 +1169,13 @@ export function getArtClassSpec (vm) {
+   return spec;
+ }
+ 
++// 运行时探测，初始化时自动探测当前 Android 版本的 ART 内部布局
+ function _getArtMethodSpec (vm) {
+-  const api = getApi();
+-  let spec;
++  const api = getApi(); // 获取 frida 内部导出的 ART 运行时相关 API 和辅助符号
++  let spec; // 存储探测结果
+ 
+   vm.perform(env => {
++    // 1. 获取一个已知的 Java 静态 Native 方法作为探测桩
+     const process = env.findClass('android/os/Process');
+     const getElapsedCpuTime = unwrapMethodId(env.getStaticMethodId(process, 'getElapsedCpuTime', '()J'));
+     env.deleteLocalRef(process);
+@@ -3964,6 +3966,7 @@ function computeDalvikJniArgInfo (methodId) {
+   return (returnType << DALVIK_JNI_RETURN_SHIFT) | hints;
+ }
+ 
++// 方法备份
+ function cloneArtMethod (method, vm) {
+   const api = getApi();
+ 

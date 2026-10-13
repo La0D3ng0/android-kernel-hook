@@ -1,0 +1,12 @@
+ART_HOOK_LIVE_TEST_0.1 {
+  global:
+    art_hook_live_create;
+    art_hook_live_activate;
+    art_hook_live_deactivate;
+    art_hook_live_destroy;
+    art_hook_live_enter_count;
+    art_hook_live_leave_count;
+    art_hook_live_flags_cycle;
+  local:
+    *;
+};

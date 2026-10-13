@@ -1,0 +1,13 @@
+MAKO_0.1 {
+  global:
+    JNI_OnLoad;
+    JNI_OnUnload;
+    mako_prepare;
+    mako_adopt_seed;
+    mako_reflection_ready;
+    mako_resolve_method;
+    mako_resolve_reflected;
+    mako_build_id;
+  local:
+    *;
+};

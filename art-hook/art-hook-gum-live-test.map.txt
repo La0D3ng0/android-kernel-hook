@@ -1,0 +1,9 @@
+ART_HOOK_GUM_LIVE_TEST_0.1 {
+  global:
+    art_hook_gum_live_api_size;
+    art_hook_gum_live_run;
+    art_hook_gum_live_target;
+    art_hook_gum_live_replacement;
+  local:
+    *;
+};

@@ -1,0 +1,27 @@
+plugins {
+    id 'com.android.application'
+}
+
+dependencies {
+    implementation project(':host')
+}
+
+android {
+    namespace 'dev.rtgum.manager'
+    compileSdk 35
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
+    defaultConfig {
+        applicationId 'dev.rtgum.manager'
+        minSdk 26
+        targetSdk 35
+        versionCode 13
+        versionName '0.2.11'
+        testInstrumentationRunner 'dev.rtgum.manager.LoaderInstrumentation'
+    }
+}

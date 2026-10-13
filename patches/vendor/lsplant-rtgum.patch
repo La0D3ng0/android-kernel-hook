@@ -1,0 +1,171 @@
+diff --git a/lsplant/src/main/jni/art/runtime/art_method.cxx b/lsplant/src/main/jni/art/runtime/art_method.cxx
+index 9106d06..9d4d682 100644
+--- a/lsplant/src/main/jni/art/runtime/art_method.cxx
++++ b/lsplant/src/main/jni/art/runtime/art_method.cxx
+@@ -66,7 +66,10 @@ public:
+         if (GetMethodShortyL_) {
+             return GetMethodShortyL_(env, env->FromReflectedMethod(method));
+         }
+-        return GetMethodShorty_(env, env->FromReflectedMethod(method));
++        if (GetMethodShorty_) {
++            return GetMethodShorty_(env, env->FromReflectedMethod(method));
++        }
++        return nullptr;
+     }
+ 
+     void SetNonCompilable() {
+@@ -333,8 +336,9 @@ public:
+         }
+ 
+         if (!handler(GetMethodShortyL_, true, GetMethodShorty_)) {
+-            LOGE("Failed to find GetMethodShorty");
+-            return false;
++            // Android 15+ ART dropped the JNI GetMethodShorty helper. Dex
++            // prototypes then use Method.getReturnType/getParameterTypes.
++            LOGW("GetMethodShorty is absent; dex shorty will use JNI reflection");
+         }
+ 
+         handler(PrettyMethod_, PrettyMethodStatic_, PrettyMethodMirror_);
+diff --git a/lsplant/src/main/jni/art/runtime/class_linker.cxx b/lsplant/src/main/jni/art/runtime/class_linker.cxx
+index 9906454..34a5396 100644
+--- a/lsplant/src/main/jni/art/runtime/class_linker.cxx
++++ b/lsplant/src/main/jni/art/runtime/class_linker.cxx
+@@ -340,7 +340,10 @@ public:
+         if (!register_native_hooked ||
+             !handler(UnregisterNativeClassLinker_, UnregisterNative_,
+                      UnregisterNativeThread_)) {
+-            return false;
++            // Android 15+ hides ClassLinker/ArtMethod RegisterNative. Java
++            // entrypoint swap still works; native JNI registration will not
++            // propagate to backup methods.
++            LOGW("RegisterNative/UnregisterNative unavailable");
+         }
+ 
+         if (sdk_int >= kSdkR) {
+@@ -367,7 +370,7 @@ public:
+                 dummy->SetNonNative();
+                 art_quick_to_interpreter_bridge_ = GetOptimizedCodeFor(dummy.get());
+             } else if (!handler(art_quick_to_interpreter_bridge_)) [[unlikely]] {
+-                return false;
++                LOGW("interpreter deopt symbols unavailable; using entrypoint swap only");
+             }
+             LOGD("art_quick_to_interpreter_bridge = %p", &art_quick_to_interpreter_bridge_);
+         }
+diff --git a/lsplant/src/main/jni/lsplant.cc b/lsplant/src/main/jni/lsplant.cc
+index 20b9fa9..b93f332 100644
+--- a/lsplant/src/main/jni/lsplant.cc
++++ b/lsplant/src/main/jni/lsplant.cc
+@@ -680,9 +680,17 @@ void *GenerateTrampolineFor(art::ArtMethod *hook) {
+ }
+ 
+ bool DoHook(ArtMethod *target, ArtMethod *hook, ArtMethod *backup) {
+-    ScopedGCCriticalSection section(art::Thread::Current(), art::gc::kGcCauseDebugger,
++    auto *self = art::Thread::Current();
++    if (self == nullptr) {
++        LOGE("DoHook: Thread::Current is null");
++        return false;
++    }
++    LOGI("DoHook: thread=%p target=%p hook=%p backup=%p", self, target, hook, backup);
++    ScopedGCCriticalSection section(self, art::gc::kGcCauseDebugger,
+                                     art::gc::kCollectorTypeDebugger);
++    LOGI("DoHook: gc section");
+     ScopedSuspendAll suspend("LSPlant Hook", false);
++    LOGI("DoHook: suspended");
+     LOGV("Hooking: target = %s(%p), hook = %s(%p), backup = %s(%p)", target->PrettyMethod().c_str(),
+          target, hook->PrettyMethod().c_str(), hook, backup->PrettyMethod().c_str(), backup);
+ 
+@@ -691,15 +699,15 @@ bool DoHook(ArtMethod *target, ArtMethod *hook, ArtMethod *backup) {
+         return false;
+         // NOLINTNEXTLINE
+     } else {
+-        LOGV("Generated trampoline %p", entrypoint);
++        LOGI("DoHook: trampoline %p", entrypoint);
+ 
+         target->SetNonIntrinsic();
+-
++        LOGI("DoHook: non-intrinsic");
+         target->BackupTo(backup);
+-
++        LOGI("DoHook: backup copied");
+         target->SetNonCompilable();
+-
+         target->SetEntryPoint(entrypoint);
++        LOGI("DoHook: entrypoint set");
+ 
+         LOGV("Done hook: target(%p:0x%x) -> %p; backup(%p:0x%x) -> %p; hook(%p:0x%x) -> %p", target,
+              target->GetAccessFlags(), target->GetEntryPoint(), backup, backup->GetAccessFlags(),
+@@ -730,7 +738,7 @@ bool DoUnHook(ArtMethod *target, ArtMethod *backup) {
+ }
+ 
+ std::string GetProxyMethodShorty(JNIEnv *env, jobject proxy_method) {
+-    const auto return_type = JNI_CallObjectMethod(env, proxy_method, method_get_return_type);
++    auto method_class = JNI_FindClass(env, "java/lang/reflect/Method");
+     const auto parameter_types =
+         JNI_Cast<jobjectArray>(JNI_CallObjectMethod(env, proxy_method, method_get_parameter_types));
+     auto integer_class = JNI_FindClass(env, "java/lang/Integer");
+@@ -784,7 +792,12 @@ std::string GetProxyMethodShorty(JNIEnv *env, jobject proxy_method) {
+         if (JNI_IsSameObject(env, type, void_type)) return 'V';
+         return 'L';
+     };
+-    out += type_to_shorty(return_type);
++    if (method_class && JNI_IsInstanceOf(env, proxy_method, method_class)) {
++        const auto return_type = JNI_CallObjectMethod(env, proxy_method, method_get_return_type);
++        out += type_to_shorty(return_type);
++    } else {
++        out += 'V';
++    }
+     for (const auto &param : parameter_types) {
+         out += type_to_shorty(param);
+     }
+@@ -853,17 +866,28 @@ using ::lsplant::IsHooked;
+             LOGE("callback_method is not a method of hooker_object");
+             return nullptr;
+         }
++        std::string shorty;
++        if (!is_proxy) {
++            if (const char *art_shorty = ArtMethod::GetMethodShorty(env, target_method);
++                art_shorty != nullptr && art_shorty[0] != '\0') {
++                shorty = art_shorty;
++            }
++        }
++        if (shorty.empty()) {
++            shorty = GetProxyMethodShorty(env, target_method);
++            LOGI("Using reflected method shorty %s", shorty.c_str());
++        }
++        LOGI("Hook: BuildDex shorty=%s static=%d", shorty.c_str(), is_static ? 1 : 0);
+         std::tie(built_class, hooker_field, hook_method, backup_method) = WrapScope(
+             env,
+-            BuildDex(env, callback_class_loader.get(),
+-                     __builtin_expect(is_proxy, 0) ? GetProxyMethodShorty(env, target_method)
+-                                                   : ArtMethod::GetMethodShorty(env, target_method),
+-                     is_static, target->IsConstructor() ? "constructor" : target_method_name.get(),
++            BuildDex(env, callback_class_loader.get(), shorty, is_static,
++                     target->IsConstructor() ? "constructor" : target_method_name.get(),
+                      class_name.get(), callback_method_name.get()));
+         if (!built_class || !hooker_field || !hook_method || !backup_method) {
+             LOGE("Failed to generate hooker");
+             return nullptr;
+         }
++        LOGI("Hook: BuildDex ok");
+     }
+ 
+     auto reflected_hook = JNI_ToReflectedMethod(env, built_class, hook_method, JNI_TRUE);
+@@ -875,8 +899,10 @@ using ::lsplant::IsHooked;
+     auto *backup = ArtMethod::FromReflectedMethod(env, reflected_backup.get());
+ 
+     JNI_SetStaticObjectField(env, built_class, hooker_field, hooker_object);
++    LOGI("Hook: calling DoHook");
+ 
+     if (DoHook(target, hook, backup)) {
++        LOGI("Hook: DoHook ok");
+         std::apply(
+             [backup_method, target_method_id = env->FromReflectedMethod(target_method)](auto... v) {
+                 ((*v == target_method_id &&
+@@ -885,6 +911,7 @@ using ::lsplant::IsHooked;
+             },
+             kInternalMethods);
+         jobject global_backup = JNI_NewGlobalRef(env, reflected_backup);
++        LOGI("Hook: backup global %p", global_backup);
+         RecordHooked(target, target->GetDeclaringClass()->GetClassDef(), global_backup, backup);
+         if (!is_proxy) [[likely]] {
+             RecordJitMovement(target, backup);

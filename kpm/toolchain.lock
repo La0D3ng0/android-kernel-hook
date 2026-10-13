@@ -1,0 +1,8 @@
+KERNELPATCH_REPOSITORY=https://github.com/bmax121/KernelPatch.git
+KERNELPATCH_COMMIT=8eebc2e00235e64e3cd56b4918287415188cc752
+KERNELPATCH_VERSION=0.12.2
+AARCH64_TOOLCHAIN_VERSION=12.2.1-1.1
+AARCH64_TOOLCHAIN_DIRECTORY=xpack-aarch64-none-elf-gcc-12.2.1-1.1
+AARCH64_TOOLCHAIN_ARCHIVE=xpack-aarch64-none-elf-gcc-12.2.1-1.1-linux-x64.tar.gz
+AARCH64_TOOLCHAIN_URL=https://github.com/xpack-dev-tools/aarch64-none-elf-gcc-xpack/releases/download/v12.2.1-1.1/xpack-aarch64-none-elf-gcc-12.2.1-1.1-linux-x64.tar.gz
+AARCH64_TOOLCHAIN_SHA256=20c3255b0f9d35b4715351972470f2f3e09b77669c2c85627b4e81e16cc5a2e6

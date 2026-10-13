@@ -1,0 +1,12 @@
+MAKO_CACHE_0.1 {
+  global:
+    JNI_OnLoad;
+    JNI_OnUnload;
+    Java_com_rtgum_mako_PreForkHost_prepare;
+    Java_com_rtgum_mako_PreForkHost_ready;
+    mako_seed_prepare;
+    mako_seed_export;
+    mako_seed_ready;
+  local:
+    *;
+};

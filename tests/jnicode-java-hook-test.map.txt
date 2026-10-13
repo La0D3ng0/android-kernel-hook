@@ -1,0 +1,13 @@
+RTGUM_JNICODE_JAVA_HOOK_0.1 {
+  global:
+    JNI_OnLoad;
+    rtgum_host_bind_java;
+    rtgum_jnicode_java_probe;
+    rtgum_jnicode_java_hook_install;
+    rtgum_jnicode_java_hook_revert;
+    rtgum_jnicode_loaddex_selftest;
+    rtgum_jnicode_binder_selftest;
+    rtgum_jnicode_gtrace_selftest;
+  local:
+    *;
+};

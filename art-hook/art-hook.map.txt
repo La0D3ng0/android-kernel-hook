@@ -1,0 +1,8 @@
+ART_HOOK_0.1 {
+  global:
+    JNI_OnLoad;
+    JNI_OnUnload;
+    art_hook_build_id;
+  local:
+    *;
+};

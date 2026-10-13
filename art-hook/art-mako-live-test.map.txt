@@ -1,0 +1,6 @@
+MAKO_TEST_0.1 {
+  global:
+    Java_MakoProbe_runNative;
+  local:
+    *;
+};

@@ -1,0 +1,19 @@
+{
+  global:
+    rtgum_mako_entry;
+    ghostModuleUnload;
+    ghostEntry;
+    JNI_OnLoad;
+    memmove;
+    memcpy;
+    memset;
+    memcmp;
+    strlen;
+    memchr;
+    strchr;
+    strstr;
+    strcmp;
+    strncmp;
+  local:
+    *;
+};

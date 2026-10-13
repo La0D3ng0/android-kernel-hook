@@ -1,0 +1,90 @@
+# Local toolchains and generated output
+/.toolchains/
+/out/
+/build/
+**/build/
+**/out/
+/cmake-build-*/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/__pycache__/
+*.py[cod]
+
+# Dependencies restored by tools/bootstrap-dependencies.ps1
+/art-hook/third_party/lsplant/
+/frida-java-bridge/
+/mkpms/
+/third_party/frida-gum/
+/third_party/KernelPatch/
+/third_party/KernelPatch-0.12.2/
+/third_party/KernelPatch-0.13.9/
+/third_party/lua-5.4.7/doc/
+
+# Private design notes and local test samples
+/docs/
+/art-hook/docs/
+/gum-API示例大全/
+/test-apk/
+/Android 内核无痕 Hook 框架设计思路.md
+
+# Android and IDE state
+/.gradle/
+**/.gradle/
+**/local.properties
+/.idea/
+/.vscode/
+/.vs/
+*.iml
+*.suo
+*.user
+
+# Build products, device images and captured logs
+*.apk
+*.aab
+*.apks
+*.dex
+*.class
+*.jar
+*.so
+*.a
+*.o
+*.obj
+*.kpm
+*.ko
+*.img
+*.bin
+*.elf
+*.exe
+*.dll
+*.pdb
+*.pyd
+*.log
+*.trace
+*.dmp
+*.zip
+*.7z
+*.tar
+*.tar.*
+
+# Local credentials and signing material
+.env
+.env.*
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+*superkey*
+*session-key*
+*keystore.password*
+
+# Editor and operating-system files
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini

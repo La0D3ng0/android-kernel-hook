@@ -1,0 +1,6 @@
+ART_HOOK_JAVA_PROXY_LIVE_TEST_0.1 {
+  global:
+    art_hook_java_proxy_live_test;
+  local:
+    *;
+};

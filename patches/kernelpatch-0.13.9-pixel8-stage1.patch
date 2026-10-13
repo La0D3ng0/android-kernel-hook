@@ -1,0 +1,305 @@
+diff --git a/kernel/base/start.c b/kernel/base/start.c
+index 66b98fe..dd65a9d 100644
+--- a/kernel/base/start.c
++++ b/kernel/base/start.c
+@@ -251,6 +251,7 @@ uint64_t runtime_base_addr = 0;
+ 
+ uint64_t kimage_voffset = 0;
+ uint64_t linear_voffset = 0;
++KP_EXPORT_SYMBOL(linear_voffset);
+ uint64_t kernel_va = 0;
+ uint64_t kernel_pa = 0;
+ int64_t kernel_size = 0;
+diff --git a/kernel/patch/include/module.h b/kernel/patch/include/module.h
+index 1e50d41..ad4b371 100644
+--- a/kernel/patch/include/module.h
++++ b/kernel/patch/include/module.h
+@@ -37,6 +37,8 @@ struct module
+     } info;
+ 
+     char *args, *ctl_args;
++    unsigned int active_controls;
++    unsigned int unloading;
+     char load_event[32];
+     char load_source[16];
+ 
+diff --git a/kernel/patch/module/module.c b/kernel/patch/module/module.c
+index acd7bc0..f037325 100644
+--- a/kernel/patch/module/module.c
++++ b/kernel/patch/module/module.c
+@@ -505,7 +505,9 @@ long load_module_ex(const void *data, int len, const char *args, const char *eve
+ 
+     if (!rc) {
+         logkfi("[%s] succeed with [%s] \n", mod->info.name, args);
++        spin_lock(&module_lock);
+         list_add_tail(&mod->list, &modules.list);
++        spin_unlock(&module_lock);
+         goto out;
+     } else {
+         set_load_error(info, "module init failed");
+@@ -523,22 +525,37 @@ out:
+     return rc;
+ }
+ 
+-// todo: lock
+ long unload_module(const char *name, void *__user reserved)
+ {
+     if (!name) return -EINVAL;
+     logkfe("name: %s\n", name);
+ 
+-    rcu_read_lock();
+     long rc = 0;
+-
++    spin_lock(&module_lock);
+     struct module *mod = find_module(name);
+     if (!mod) {
+         rc = -ENOENT;
+-        goto out;
++        goto unlock;
+     }
+-    list_del(&mod->list);
++    if (mod->active_controls || mod->unloading) {
++        rc = -EBUSY;
++        goto unlock;
++    }
++    mod->unloading = 1;
++    spin_unlock(&module_lock);
++
+     rc = (*mod->exit)(reserved);
++    if (rc) {
++        spin_lock(&module_lock);
++        mod->unloading = 0;
++        spin_unlock(&module_lock);
++        logkfe("name: %s, exit refused unload: %ld\n", name, rc);
++        return rc;
++    }
++
++    spin_lock(&module_lock);
++    list_del(&mod->list);
++    spin_unlock(&module_lock);
+ 
+     if (mod->args) kvfree(mod->args);
+     if (mod->ctl_args) kvfree(mod->ctl_args);
+@@ -547,9 +564,9 @@ long unload_module(const char *name, void *__user reserved)
+     kvfree(mod);
+ 
+     logkfi("name: %s, rc: %d\n", name, rc);
+-
+-out:
+-    rcu_read_unlock();
++    return rc;
++unlock:
++    spin_unlock(&module_lock);
+     return rc;
+ }
+ 
+@@ -619,38 +636,39 @@ long module_control0(const char *name, const char *ctl_args, char *__user out_ms
+     int args_len = strlen(ctl_args);
+     if (args_len <= 0) return -EINVAL;
+ 
+-    logkfi("name %s, args: %s\n", name, ctl_args);
++    /* ctl0 may allocate memory or read files. Never call it under RCU. */
++    char *args_copy = vmalloc(args_len + 1);
++    if (!args_copy) return -ENOMEM;
++    strcpy(args_copy, ctl_args);
+ 
+     long rc = 0;
+-    rcu_read_lock();
+-
++    spin_lock(&module_lock);
+     struct module *mod = find_module(name);
+-    if (!mod) {
++    if (!mod || mod->unloading) {
+         rc = -ENOENT;
+-        goto out;
++        goto unlock;
+     }
+ 
+     if (!mod->ctl0 || !*mod->ctl0) {
+         logkfe("no ctl0\n");
+         rc = -ENOSYS;
+-        goto out;
+-    }
+-
+-    if (mod->ctl_args) kvfree(mod->ctl_args);
+-
+-    mod->ctl_args = vmalloc(args_len + 1);
+-    if (!mod->ctl_args) {
+-        rc = -ENOMEM;
+-        goto out;
++        goto unlock;
+     }
++    ++mod->active_controls;
++    spin_unlock(&module_lock);
+ 
+-    strcpy(mod->ctl_args, ctl_args);
++    rc = (*mod->ctl0)(args_copy, out_msg, outlen);
+ 
+-    rc = (*mod->ctl0)(mod->ctl_args, out_msg, outlen);
++    spin_lock(&module_lock);
++    --mod->active_controls;
++    spin_unlock(&module_lock);
++    kvfree(args_copy);
+ 
+     logkfi("name: %s, rc: %d\n", name, rc);
+-out:
+-    rcu_read_unlock();
++    return rc;
++unlock:
++    spin_unlock(&module_lock);
++    kvfree(args_copy);
+     return rc;
+ }
+ 
+@@ -658,25 +676,29 @@ long module_control1(const char *name, void *a1, void *a2, void *a3)
+ {
+     logkfi("name %s, a1: %llx, a2: %llx, a3: %llx\n", name, a1, a2, a3);
+     long rc = 0;
+-    rcu_read_lock();
+-
++    spin_lock(&module_lock);
+     struct module *mod = find_module(name);
+-    if (!mod) {
++    if (!mod || mod->unloading) {
+         rc = -ENOENT;
+-        goto out;
++        goto unlock;
+     }
+ 
+     if (!mod->ctl1 || !*mod->ctl1) {
+         logkfe("no ctl1\n");
+         rc = -ENOSYS;
+-        goto out;
++        goto unlock;
+     }
+-
++    ++mod->active_controls;
++    spin_unlock(&module_lock);
+     rc = (*mod->ctl1)(a1, a2, a3);
++    spin_lock(&module_lock);
++    --mod->active_controls;
++    spin_unlock(&module_lock);
+ 
+     logkfi("name: %s, rc: %d\n", name, rc);
+-out:
+-    rcu_read_unlock();
++    return rc;
++unlock:
++    spin_unlock(&module_lock);
+     return rc;
+ }
+ 
+@@ -686,20 +708,35 @@ long notify_modules_event(const char *event, const char *args, void *__user rese
+ 
+     long result = 0;
+     int count = 0;
+-    rcu_read_lock();
++    /* Event callbacks may sleep, and unload must not free a callback target.
++     * Pin a bounded snapshot under the list lock, then invoke outside it. */
++    struct module *callbacks[64];
++    spin_lock(&module_lock);
+ 
+     struct module *pos;
+     list_for_each_entry(pos, &modules.list, list)
+     {
+-        if (!pos->event || !*pos->event) continue;
++        if (pos->unloading || !pos->event || !*pos->event) continue;
++        if (count == (int)(sizeof(callbacks) / sizeof(callbacks[0]))) {
++            for (int i = 0; i < count; ++i) --callbacks[i]->active_controls;
++            spin_unlock(&module_lock);
++            return -E2BIG;
++        }
++        ++pos->active_controls;
++        callbacks[count++] = pos;
++    }
++    spin_unlock(&module_lock);
+ 
++    for (int i = 0; i < count; ++i) {
++        pos = callbacks[i];
+         long rc = (*pos->event)(event, args, reserved);
+         logkfi("event: %s, module: %s, rc: %ld\n", event, pos->info.name, rc);
+         if (rc < 0 && !result) result = rc;
+-        count++;
++        spin_lock(&module_lock);
++        --pos->active_controls;
++        spin_unlock(&module_lock);
+     }
+ 
+-    rcu_read_unlock();
+     return result ?: count;
+ }
+ KP_EXPORT_SYMBOL(notify_modules_event);
+@@ -718,7 +755,7 @@ struct module *find_module(const char *name)
+ 
+ int get_module_nums()
+ {
+-    rcu_read_lock();
++    spin_lock(&module_lock);
+ 
+     struct module *pos;
+     int n = 0;
+@@ -726,7 +763,7 @@ int get_module_nums()
+     {
+         n++;
+     }
+-    rcu_read_unlock();
++    spin_unlock(&module_lock);
+ 
+     logkfd("%d\n", n);
+     return n;
+@@ -737,27 +774,38 @@ int list_modules(char *out_names, int size)
+     if (!out_names || size <= 0) return -EINVAL;
+     out_names[0] = '\0';
+ 
+-    rcu_read_lock();
++    spin_lock(&module_lock);
+ 
+     struct module *pos;
+     int off = 0;
+     list_for_each_entry(pos, &modules.list, list)
+     {
+-        off += snprintf(out_names + off, size - 1 - off, "%s\n", pos->info.name);
++        int room = size - off;
++        if (room <= 1) break;
++        int written = snprintf(out_names + off, room, "%s\n", pos->info.name);
++        if (written < 0) break;
++        if (written >= room) {
++            off = size - 1;
++            break;
++        }
++        off += written;
+     }
+-    if (off > 0) out_names[off - 1] = '\0';
++    if (off > 0 && out_names[off - 1] == '\n') out_names[off - 1] = '\0';
+ 
+-    rcu_read_unlock();
++    spin_unlock(&module_lock);
+     return off;
+ }
+ 
+ int get_module_info(const char *name, char *out_info, int size)
+ {
+     if (size <= 0) return 0;
+-    rcu_read_lock();
++    spin_lock(&module_lock);
+ 
+     struct module *mod = find_module(name);
+-    if (!mod) return -ENOENT;
++    if (!mod) {
++        spin_unlock(&module_lock);
++        return -ENOENT;
++    }
+ 
+     int sz = snprintf(out_info, size,
+                       "name=%s\n"
+@@ -779,9 +827,8 @@ int get_module_info(const char *name, char *out_info, int size)
+     }
+ 
+     out_info[size - 1] = '\0';
++    spin_unlock(&module_lock);
+     logkfd("%s", out_info);
+-
+-    rcu_read_unlock();
+     return sz;
+ }
+ 

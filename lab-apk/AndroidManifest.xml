@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.rtgum.lab">
+
+    <application
+        android:label="RTGUM ART Lab"
+        android:debuggable="true"
+        android:allowBackup="false"
+        android:hasCode="true">
+        <activity
+            android:name="dev.rtgum.lab.MainActivity"
+            android:exported="true"
+            android:label="RTGUM ART Lab">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <receiver
+            android:name="dev.rtgum.lab.GcReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.rtgum.lab.FORCE_GC" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name="dev.rtgum.lab.TraceReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.rtgum.lab.RUN_KERNEL_TRACE" />
+                <action android:name="dev.rtgum.lab.RUN_GTRACE" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
